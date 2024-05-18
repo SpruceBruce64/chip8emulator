@@ -33,10 +33,10 @@ class chip8{
         unsigned short stack[16];
         unsigned short sp;
 
+    public:
         //keypad for input
         unsigned char key[16];
 
-    public:
         //graphics
         unsigned char gfx[64 * 32];
 
@@ -49,6 +49,8 @@ class chip8{
         void loadGame(std::string);
 
         void emulateCycle();
+
+        static uint32_t decrementTimer(uint32_t interval, void *emu);
 };
 
 #endif /*CHIP8EMU*/

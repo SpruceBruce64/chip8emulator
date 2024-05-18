@@ -50,10 +50,10 @@ void chip8::loadGame(std::string gamePath){
     int i = 0;
     while(!file.eof()){
         memory[0x200 + i] = file.get();
-        printf("%d ",memory[0x200 + i]);
+        //printf("%d ",memory[0x200 + i]);
         i++;
     }
-    printf("\n");
+    //printf("\n");
     file.close();
 }
 
@@ -64,8 +64,8 @@ void chip8::emulateCycle(){
     // decode op code
     switch(opcode & 0xF000){
         case 0x0000:
-            switch(opcode & 0x000F){
-                case 0x0000: // 0x00E0: Clears the screen
+            switch(opcode & 0x00FF){
+                case 0x00E0: // 0x00E0: Clears the screen
                     //execute opcode
                     for(int i = 0; i < 2048; i++){
                         gfx[i] = 0;
@@ -74,7 +74,7 @@ void chip8::emulateCycle(){
                     pc += 2;
                 break;
 
-                case 0x000E: // 0x00EE: Returns from subroutine
+                case 0x00EE: // 0x00EE: Returns from subroutine
                     //execute opcode
                     sp--;
                     pc = stack[sp];
@@ -106,6 +106,13 @@ void chip8::emulateCycle(){
                 pc += 2;
         break;
 
+        case 0x4000: // 4XNN: Skips the next instruction if VX does not equal NN (usually the next instruction is a jump to skip a code block).
+            if(V[(opcode & 0x0F00) >> 8] != (opcode & 0x00FF))
+                pc += 4;
+            else
+                pc += 2;
+        break;
+
         case 0x6000: // 6XNN: Sets VX to NN
             V[(opcode & 0x0F00) >> 8] = opcode & 0x00FF;
             pc += 2;
@@ -114,6 +121,48 @@ void chip8::emulateCycle(){
         case 0x7000: // 7XNN: Adds NN to VX (carry flag is not changed).
             V[(opcode & 0x0F00) >> 8] += opcode & 0x00FF;
             pc += 2;
+        break;
+
+        case 0x8000:
+            switch (opcode & 0x000F)
+            {
+                case 0x0000: // 8XY0: Sets VX to the value of VY.
+                    V[(opcode & 0x0F00) >> 8] = V[(opcode & 0x00F0) >> 4];
+                    pc += 2;
+                break;
+
+                case 0x0002: // 8XY2: Sets VX to VX and VY. (bitwise AND operation).
+                    V[(opcode & 0x0F00) >> 8] &= V[(opcode & 0x00F0) >> 4];
+                    pc += 2;
+                break;
+
+                case 0x0005: // 8XY5: VY is subtracted from VX. VF is set to 0 when there's an underflow, and 1 when there is not. (i.e. VF set to 1 if VX >= VY and 0 if not).
+                    if(V[(opcode & 0x0F00) >> 8] > V[(opcode & 0x00F0) >> 4])
+                        V[0xF] = 1;
+                    else
+                        V[0xF] = 0;
+                    V[(opcode & 0x0F00) >> 8] -= V[(opcode & 0x00F0) >> 4];
+                    pc += 2;
+                break;
+
+                case 0x0004: // 8XY4: Adds VY to VX. VF is set to 1 when there's an overflow, and to 0 when there is not.
+                {
+                    int16_t sum = V[(opcode & 0x0F00) >> 8] + V[(opcode & 0x00F0) >> 4];
+                    if(sum > 0x00FF){
+                        V[0xF] = 1;
+                        sum &= 0x00FF;
+                    }
+                    else
+                        V[0xF] = 0;
+                    V[(opcode & 0x0F00) >> 8] = sum;
+                    pc += 2;
+                }
+                break;
+                
+                default:
+                    printf("Unknown opcode [0x8000]: 0x%X\n", opcode);
+                break;
+            }
         break;
 
         case 0xA000: // ANNN: Sets I to the address NNN
@@ -150,6 +199,22 @@ void chip8::emulateCycle(){
         }
         break;
 
+        case 0xE000:
+            switch (opcode & 0x00FF)
+            {
+                case 0x00A1: // 0xEXA1: Skips the next instruction if the key stored in VX is not pressed (usually the next instruction is a jump to skip a code block).
+                    if(key[V[(opcode & 0x0F00) >> 8]] == 0)
+                        pc += 4;
+                    else
+                        pc += 2;
+                break;
+                
+                default:
+                    printf("Unknown opcode [0xE000]: 0x%X\n", opcode);
+                break;
+            }
+        break;
+
         case 0xF000:
             switch(opcode & 0x00FF){
 
@@ -160,6 +225,11 @@ void chip8::emulateCycle(){
 
                 case 0x0015: // 0xFX15: Sets the delay timer to VX.
                     delay_timer = V[(opcode & 0x0F00) >> 8];
+                    pc += 2;
+                break;
+
+                case 0x0018: // 0xFX18: Sets the sound timer to VX.
+                    sound_timer = V[(opcode & 0x0F00) >> 8];
                     pc += 2;
                 break;
 
@@ -194,13 +264,20 @@ void chip8::emulateCycle(){
     }
     // execute op code
 
-    // update timers
-    if(delay_timer > 0)
-        --delay_timer;
     
-    if(sound_timer > 0){
-        if(sound_timer == 1)
+}
+
+uint32_t chip8::decrementTimer(uint32_t interval, void *emu){
+    //printf("decrement\n");
+    // update timers
+    chip8 *myEmu = reinterpret_cast<chip8 *>(emu);
+    if(myEmu->delay_timer > 0)
+        --(myEmu->delay_timer);
+    
+    if(myEmu->sound_timer > 0){
+        if(myEmu->sound_timer == 1)
             printf("BOOP!\n");
-        --sound_timer;
+        --(myEmu->sound_timer);
     }
+    return 16;
 }
